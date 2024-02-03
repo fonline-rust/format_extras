@@ -1,3 +1,4 @@
+use nom::{InputTakeAtPosition, AsChar, Offset, Slice, InputIter, InputLength, Compare, error::VerboseError, InputTake};
 pub use nom::{
     self,
     branch::alt,
@@ -19,9 +20,68 @@ pub mod complete {
     };
 }
 pub use arrayvec::ArrayVec;
+use std::ops::{RangeTo, Range, RangeFrom};
 pub use std::str::FromStr;
 
 use complete::*;
+
+pub trait StringLikeInput: InputTakeAtPosition<Item = Self::Char> + PartialEq + Copy + Offset + Slice<RangeTo<usize>> + Slice<RangeFrom<usize>> + Slice<Range<usize>> + InputIter<Item = Self::Char> + InputLength + Compare<&'static str> + InputTake
+{
+    type Char: AsChar + Clone;
+    fn trim(self) -> Self;
+    fn parse<T: FromStr>(self) -> Result<T, ()>;
+    fn err_to_string<T>(
+        self,
+        res: IResult<Self, T, VerboseError<Self>>,
+    ) -> Result<(Self, T), String>;
+}
+
+impl<'a> StringLikeInput for &'a [u8] {
+    type Char = u8;
+    fn trim(self) -> Self {
+        let mut bytes = self;
+        while let [first, rest @ ..] = bytes {
+            if first.is_ascii_whitespace() {
+                bytes = rest;
+            } else {
+                break;
+            }
+        }
+        while let [rest @ .., last] = bytes {
+            if last.is_ascii_whitespace() {
+                bytes = rest;
+            } else {
+                break;
+            }
+        }
+        bytes
+    }
+    fn parse<T: FromStr>(self) -> Result<T, ()> {
+        let str = std::str::from_utf8(self).ok().ok_or(())?;
+        FromStr::from_str(str).ok().ok_or(())
+    }
+    fn err_to_string<T>(
+        self,
+        res: IResult<Self, T, VerboseError<Self>>,
+    ) -> Result<(Self, T), String> {
+        nom_err_to_string_bytes(self, res)
+    }
+}
+impl<'a> StringLikeInput for &'a str {
+    type Char = char;
+    fn trim(self) -> Self {
+        self.trim()
+    }
+    fn parse<T: FromStr>(self) -> Result<T, ()> {
+        FromStr::from_str(self).ok().ok_or(())
+    }
+    fn err_to_string<T>(
+        self,
+        res: IResult<Self, T, VerboseError<Self>>,
+    ) -> Result<(Self, T), String> {
+        nom_err_to_string(self, res)
+    }
+}
 
 #[allow(dead_code)]
 pub fn slice_has_none<T>(slice: &[Option<T>]) -> bool {
@@ -35,10 +95,10 @@ where
     move |i| map(opt(&fun), |option| option.is_some())(i)
 }
 
-pub fn unsigned_number<'a, E: ParseError<&'a str>, T: FromStr>(
-    i: &'a str,
-) -> IResult<&'a str, T, E> {
-    map_res(digit1, T::from_str)(i)
+pub fn unsigned_number<I: StringLikeInput, E: ParseError<I>, T: FromStr>(
+    i: I,
+) -> IResult<I, T, E> {
+    map_res(digit1, I::parse)(i)
 }
 
 pub fn space0_number<'a, E: ParseError<&'a str>, T: FromStr>(i: &'a str) -> IResult<&'a str, T, E> {
@@ -92,19 +152,18 @@ pub fn line<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str,
     Ok((rest, line.trim()))
 }
 
-pub fn some_text<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    let (rest, line) = take_till1(|ch| "\r\n".contains(ch))(i)?;
+pub fn some_text<T: StringLikeInput, E: ParseError<T>>(i: T) -> IResult<T, T, E> {
+    let (rest, line) = take_till1(|ch: T::Char| "\r\n".contains(ch.as_char()))(i)?;
     Ok((rest, line.trim()))
 }
 
-pub fn optional_text<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    let (rest, line) = take_till(|ch| "\r\n".contains(ch))(i)?;
+pub fn optional_text<T: StringLikeInput, E: ParseError<T>>(i: T) -> IResult<T, T, E> {
+    let (rest, line) = take_till(|ch: T::Char| "\r\n".contains(ch.as_char()))(i)?;
     Ok((rest, line.trim()))
 }
 
 pub fn eof<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
     use nom::error_position;
-    use nom::InputLength;
 
     if i.input_len() == 0 {
         Ok((i, i))
@@ -123,7 +182,10 @@ pub fn fixed_list_of_numbers<'a, E: ParseError<&'a str>, T: FromStr>(
     move |i| count(space0_number, len)(i)
 }
 
-pub fn t_rn<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
+pub fn t_rn<T, E: ParseError<T>>(i: T) -> IResult<T, T, E>
+where
+  T: StringLikeInput,
+{
     recognize(pair(space0, line_ending))(i)
 }
 
@@ -146,11 +208,11 @@ where
     move |i| delimited(char('['), &parser, pair(char(']'), end_of_line))(i)
 }
 
-pub fn curly_delimited<'a, E: ParseError<&'a str>, O, F>(
+pub fn curly_delimited<T: StringLikeInput, E: ParseError<T>, O, F>(
     parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E>
+) -> impl Fn(T) -> IResult<T, O, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: Fn(T) -> IResult<T, O, E>,
 {
     move |i| delimited(char('{'), &parser, char('}'))(i)
 }
@@ -164,15 +226,24 @@ where
     move |i| delimited(space0, &parser, space0)(i)
 }
 
-pub fn not_closing_curly<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    take_till(|ch| ch == '}')(i)
+pub fn not_closing_curly<I: StringLikeInput, E: ParseError<I>>(i: I) -> IResult<I, I, E> {
+    take_till(|ch: I::Char| ch.as_char() == '}')(i)
 }
 
-pub fn apply<'a, E: ParseError<&'a str>, O, F>(i: &mut &'a str, parser: F) -> Result<O, nom::Err<E>>
+pub fn apply<T: StringLikeInput, E: ParseError<T>, O, F>(i: &mut T, parser: F) -> Result<O, nom::Err<E>>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: Fn(T) -> IResult<T, O, E>,
 {
     let (left, res) = parser(*i)?;
+    *i = left;
+    Ok(res)
+}
+
+pub fn cut_apply<T: StringLikeInput, E: ParseError<T>, O, F>(i: &mut T, parser: F) -> Result<O, nom::Err<E>>
+where
+    F: Fn(T) -> IResult<T, O, E>,
+{
+    let (left, res) = cut(parser)(*i)?;
     *i = left;
     Ok(res)
 }
@@ -486,7 +557,7 @@ pub fn make_path_conventional(path: &str) -> String {
 
 pub fn nom_err_to_string<'a, O>(
     text: &'a str,
-    res: IResult<&'a str, O, nom::error::VerboseError<&'a str>>,
+    res: IResult<&'a str, O, VerboseError<&'a str>>,
 ) -> Result<(&'a str, O), String> {
     match res {
         Ok(ok) => Ok(ok),
@@ -497,6 +568,36 @@ pub fn nom_err_to_string<'a, O>(
                 nom::Err::Failure(err) => {
                     format!("Failure: {}", nom::error::convert_error(text, err))
                 }
+                nom::Err::Incomplete(needed) => format!("Incomplete: {:?}", needed),
+            }
+        }),
+    }
+}
+
+pub fn nom_err_to_string_bytes<'a, O>(
+    bytes: &'a [u8],
+    res: IResult<&'a [u8], O, VerboseError<&'a [u8]>>,
+) -> Result<(&'a [u8], O), String> {
+    fn map_err<'a, F: 'a, T: 'a>(err: &'a VerboseError<F>, map: impl Fn(&'a F) -> T) -> VerboseError<T> {
+        VerboseError {
+            errors: err.errors.iter().map(|(slice, kind)| {
+                (map(slice), kind.clone())
+            }).collect()
+        }
+    }
+    let err_converter = |err| {
+        let string_err = map_err(&err, |slice| String::from_utf8_lossy(*slice));
+        let ref_err = map_err(&string_err, |cow| cow.as_ref());
+        let text = String::from_utf8_lossy(bytes);
+        nom::error::convert_error(&text, ref_err)
+    };
+    match res {
+        Ok(ok) => Ok(ok),
+        Err(err) => Err({
+            //println!("{:#?}", err);
+            match err {
+                nom::Err::Error(err) => format!("Error: {}", err_converter(err)),
+                nom::Err::Failure(err) => format!("Failure: {}", err_converter(err)),
                 nom::Err::Incomplete(needed) => format!("Incomplete: {:?}", needed),
             }
         }),
