@@ -1,0 +1,2 @@
+[workspace]
+members = ["nom_prelude", "fformat_utils"]

@@ -1,14 +1,17 @@
-use nom::{InputTakeAtPosition, AsChar, Offset, Slice, InputIter, InputLength, Compare, error::VerboseError, InputTake};
 pub use nom::{
     self,
     branch::alt,
     call,
-    combinator::{cond, map, map_opt, map_parser, map_res, opt, recognize, value, cut, peek},
+    combinator::{cond, cut, map, map_opt, map_parser, map_res, opt, peek, recognize, value},
     do_parse,
     error::{ErrorKind, ParseError},
     multi::{count, fold_many0, fold_many_m_n, many0, many_m_n, separated_list},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
+};
+use nom::{
+    error::VerboseError, AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition,
+    Offset, Slice,
 };
 pub mod complete {
     pub use nom::{
@@ -19,17 +22,30 @@ pub mod complete {
         },
     };
 }
-pub use arrayvec::ArrayVec;
-use std::ops::{RangeTo, Range, RangeFrom};
+use std::ops::{Range, RangeFrom, RangeTo};
 pub use std::str::FromStr;
 
+pub use arrayvec::ArrayVec;
 use complete::*;
 
-pub trait StringLikeInput: InputTakeAtPosition<Item = Self::Char> + PartialEq + Copy + Offset + Slice<RangeTo<usize>> + Slice<RangeFrom<usize>> + Slice<Range<usize>> + InputIter<Item = Self::Char> + InputLength + Compare<&'static str> + InputTake
+pub trait StringLikeInput:
+    InputTakeAtPosition<Item = Self::Char>
+    + PartialEq
+    + Copy
+    + Offset
+    + Slice<RangeTo<usize>>
+    + Slice<RangeFrom<usize>>
+    + Slice<Range<usize>>
+    + InputIter<Item = Self::Char>
+    + InputLength
+    + Compare<&'static str>
+    + InputTake
 {
     type Char: AsChar + Clone;
+    type ParseError;
     fn trim(self) -> Self;
-    fn parse<T: FromStr>(self) -> Result<T, ()>;
+    // TODO: use FromExternalError from nom 0.6+
+    fn parse<T: FromStr>(self) -> Result<T, Self::ParseError>;
     fn err_to_string<T>(
         self,
         res: IResult<Self, T, VerboseError<Self>>,
@@ -38,6 +54,8 @@ pub trait StringLikeInput: InputTakeAtPosition<Item = Self::Char> + PartialEq + 
 
 impl<'a> StringLikeInput for &'a [u8] {
     type Char = u8;
+    type ParseError = ();
+
     fn trim(self) -> Self {
         let mut bytes = self;
         while let [first, rest @ ..] = bytes {
@@ -56,10 +74,12 @@ impl<'a> StringLikeInput for &'a [u8] {
         }
         bytes
     }
-    fn parse<T: FromStr>(self) -> Result<T, ()> {
+
+    fn parse<T: FromStr>(self) -> Result<T, Self::ParseError> {
         let str = std::str::from_utf8(self).ok().ok_or(())?;
         FromStr::from_str(str).ok().ok_or(())
     }
+
     fn err_to_string<T>(
         self,
         res: IResult<Self, T, VerboseError<Self>>,
@@ -69,12 +89,16 @@ impl<'a> StringLikeInput for &'a [u8] {
 }
 impl<'a> StringLikeInput for &'a str {
     type Char = char;
+    type ParseError = ();
+
     fn trim(self) -> Self {
         self.trim()
     }
-    fn parse<T: FromStr>(self) -> Result<T, ()> {
+
+    fn parse<T: FromStr>(self) -> Result<T, Self::ParseError> {
         FromStr::from_str(self).ok().ok_or(())
     }
+
     fn err_to_string<T>(
         self,
         res: IResult<Self, T, VerboseError<Self>>,
@@ -88,16 +112,14 @@ pub fn slice_has_none<T>(slice: &[Option<T>]) -> bool {
     slice.iter().all(|item| item.is_none())
 }
 
-pub fn flag<'a, I: Clone, O, E: ParseError<I>, F>(fun: F) -> impl Fn(I) -> IResult<I, bool, E>
+pub fn flag<I: Clone, O, E: ParseError<I>, F>(fun: F) -> impl Fn(I) -> IResult<I, bool, E>
 where
     F: Fn(I) -> IResult<I, O, E>,
 {
     move |i| map(opt(&fun), |option| option.is_some())(i)
 }
 
-pub fn unsigned_number<I: StringLikeInput, E: ParseError<I>, T: FromStr>(
-    i: I,
-) -> IResult<I, T, E> {
+pub fn unsigned_number<I: StringLikeInput, E: ParseError<I>, T: FromStr>(i: I) -> IResult<I, T, E> {
     map_res(digit1, I::parse)(i)
 }
 
@@ -184,7 +206,7 @@ pub fn fixed_list_of_numbers<'a, E: ParseError<&'a str>, T: FromStr>(
 
 pub fn t_rn<T, E: ParseError<T>>(i: T) -> IResult<T, T, E>
 where
-  T: StringLikeInput,
+    T: StringLikeInput,
 {
     recognize(pair(space0, line_ending))(i)
 }
@@ -230,7 +252,10 @@ pub fn not_closing_curly<I: StringLikeInput, E: ParseError<I>>(i: I) -> IResult<
     take_till(|ch: I::Char| ch.as_char() == '}')(i)
 }
 
-pub fn apply<T: StringLikeInput, E: ParseError<T>, O, F>(i: &mut T, parser: F) -> Result<O, nom::Err<E>>
+pub fn apply<T: StringLikeInput, E: ParseError<T>, O, F>(
+    i: &mut T,
+    parser: F,
+) -> Result<O, nom::Err<E>>
 where
     F: Fn(T) -> IResult<T, O, E>,
 {
@@ -239,7 +264,10 @@ where
     Ok(res)
 }
 
-pub fn cut_apply<T: StringLikeInput, E: ParseError<T>, O, F>(i: &mut T, parser: F) -> Result<O, nom::Err<E>>
+pub fn cut_apply<T: StringLikeInput, E: ParseError<T>, O, F>(
+    i: &mut T,
+    parser: F,
+) -> Result<O, nom::Err<E>>
 where
     F: Fn(T) -> IResult<T, O, E>,
 {
@@ -512,7 +540,7 @@ pub fn many_key_index_int<'a, E: ParseError<&'a str>>(
         count_indexed(
             |i, index| {
                 opt_kv_ext(
-                    pair(tag(prefix), char(('0' as u8 + index as u8) as char)),
+                    pair(tag(prefix), char((b'0' + index as u8) as char)),
                     integer,
                 )(i)
             },
@@ -543,18 +571,6 @@ pub fn err_to_kind<I, O>(res: IResult<I, O, (I, ErrorKind)>) -> Result<O, ErrorK
     }
 }
 
-pub fn make_path_conventional(path: &str) -> String {
-    let mut buf = String::with_capacity(path.len());
-    for ch in path.chars() {
-        if ch == '\\' {
-            buf.push('/');
-        } else {
-            buf.extend(ch.to_lowercase())
-        }
-    }
-    buf
-}
-
 pub fn nom_err_to_string<'a, O>(
     text: &'a str,
     res: IResult<&'a str, O, VerboseError<&'a str>>,
@@ -578,15 +594,20 @@ pub fn nom_err_to_string_bytes<'a, O>(
     bytes: &'a [u8],
     res: IResult<&'a [u8], O, VerboseError<&'a [u8]>>,
 ) -> Result<(&'a [u8], O), String> {
-    fn map_err<'a, F: 'a, T: 'a>(err: &'a VerboseError<F>, map: impl Fn(&'a F) -> T) -> VerboseError<T> {
+    fn map_err<'a, F: 'a, T: 'a>(
+        err: &'a VerboseError<F>,
+        map: impl Fn(&'a F) -> T,
+    ) -> VerboseError<T> {
         VerboseError {
-            errors: err.errors.iter().map(|(slice, kind)| {
-                (map(slice), kind.clone())
-            }).collect()
+            errors: err
+                .errors
+                .iter()
+                .map(|(slice, kind)| (map(slice), kind.clone()))
+                .collect(),
         }
     }
-    let err_converter = |err| {
-        let string_err = map_err(&err, |slice| String::from_utf8_lossy(*slice));
+    let err_converter = |err: VerboseError<&[u8]>| {
+        let string_err = map_err(&err, |slice| String::from_utf8_lossy(slice));
         let ref_err = map_err(&string_err, |cow| cow.as_ref());
         let text = String::from_utf8_lossy(bytes);
         nom::error::convert_error(&text, ref_err)
@@ -618,31 +639,6 @@ macro_rules! parse_struct(
         })
     }}
 );
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nom::error::VerboseError;
-    #[test]
-    fn test_idigit1() {
-        let parser = idigit1::<VerboseError<&str>>;
-        assert_eq!(Ok(("   ", "123456")), parser("123456   "));
-        assert_eq!(Ok(("   ", "-123456")), parser("-123456   "));
-    }
-    #[test]
-    fn test_parsed_number() {
-        let parser = integer::<VerboseError<&str>, i32>;
-        assert_eq!(Ok(("   ", 123456)), parser("123456   "));
-        assert_eq!(Ok(("   ", -123456)), parser("-123456   "));
-    }
-
-    #[test]
-    fn test_t_rn() {
-        let parser = t_rn::<VerboseError<&str>>;
-        assert_eq!(Ok(("", "\n")), parser("\n"));
-        assert_eq!(Ok(("", "\r\n")), parser("\r\n"));
-    }
-}
 
 pub fn separated_list_first_unchecked<I, O, O2, E, F, G>(
     sep: G,
@@ -705,18 +701,47 @@ where
     }
 }
 
-pub fn cond_err<I:Clone, O, E: ParseError<I>, F>(b: bool, f: F) -> impl Fn(I) -> IResult<I, O, E>
+pub fn cond_err<I: Clone, O, E: ParseError<I>, F>(b: bool, f: F) -> impl Fn(I) -> IResult<I, O, E>
 where
-  F: Fn(I) -> IResult<I, O, E>,
+    F: Fn(I) -> IResult<I, O, E>,
 {
-  move |input: I| {
-    if b {
-      match f(input) {
-        Ok((i, o)) => Ok((i, o)),
-        Err(e) => Err(e),
-      }
-    } else {
-        Err(nom::Err::Error(E::from_error_kind(input, ErrorKind::NoneOf)))
+    move |input: I| {
+        if b {
+            match f(input) {
+                Ok((i, o)) => Ok((i, o)),
+                Err(e) => Err(e),
+            }
+        } else {
+            Err(nom::Err::Error(E::from_error_kind(
+                input,
+                ErrorKind::NoneOf,
+            )))
+        }
     }
-  }
+}
+
+#[cfg(test)]
+mod tests {
+    use nom::error::VerboseError;
+
+    use super::*;
+    #[test]
+    fn test_idigit1() {
+        let parser = idigit1::<VerboseError<&str>>;
+        assert_eq!(Ok(("   ", "123456")), parser("123456   "));
+        assert_eq!(Ok(("   ", "-123456")), parser("-123456   "));
+    }
+    #[test]
+    fn test_parsed_number() {
+        let parser = integer::<VerboseError<&str>, i32>;
+        assert_eq!(Ok(("   ", 123456)), parser("123456   "));
+        assert_eq!(Ok(("   ", -123456)), parser("-123456   "));
+    }
+
+    #[test]
+    fn test_t_rn() {
+        let parser = t_rn::<_, VerboseError<&str>>;
+        assert_eq!(Ok(("", "\n")), parser("\n"));
+        assert_eq!(Ok(("", "\r\n")), parser("\r\n"));
+    }
 }
