@@ -8,12 +8,12 @@ edition = "2021"
 
 [features]
 default = ["dict", "serde"]
-dict = ["scc", "thiserror", "ahash"]
+dict = ["scc", "thiserror", "ahash" ]
 
 [dependencies]
 crc32fast = "1"
 thiserror = { version = "1", optional = true }
-scc = { version = "2", optional = true }
+scc = { version = "2", optional = true, features = ["equivalent"]}
 ahash = { version = "0.8", optional = true }
 serde = { version = "1", optional = true }
-bytemuck = { version = "1", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }

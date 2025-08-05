@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["nom_prelude", "fformat_utils"]
+
+[patch.crates-io]
+scc = { path = "/home/qthree/rust_git/scalable-concurrent-containers" }
