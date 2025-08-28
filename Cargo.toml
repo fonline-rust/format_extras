@@ -1,2 +1,3 @@
 [workspace]
-members = ["nom_prelude", "fformat_utils"]
+resolver = "2"
+members = ["nom_prelude", "fformat_utils", "steal_defines"]

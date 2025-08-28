@@ -1,0 +1,20 @@
+[package]
+name = "steal_defines"
+version = "0.1.0"
+authors = ["qthree <qthree3@gmail.com>"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+quote = "1"
+log = "0.4"
+thiserror = "2"
+syn = { version = "2", default-features = false, features = [
+    "full",
+    "parsing",
+] }
+prettyplease = "0.2"
+convert_case = "0.8"
+itertools = "0.14"

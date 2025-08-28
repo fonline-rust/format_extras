@@ -1,17 +1,15 @@
 pub use nom::{
     self,
     branch::alt,
-    call,
     combinator::{cond, cut, map, map_opt, map_parser, map_res, opt, peek, recognize, value},
-    do_parse,
     error::{ErrorKind, ParseError},
-    multi::{count, fold_many0, fold_many_m_n, many0, many_m_n, separated_list},
+    multi::{count, fold_many0, fold_many_m_n, many0, many_m_n, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
 };
 use nom::{
-    error::VerboseError, AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition,
-    Offset, Slice,
+    error::{FromExternalError, VerboseError},
+    AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Parser, Slice,
 };
 pub mod complete {
     pub use nom::{
@@ -22,8 +20,11 @@ pub mod complete {
         },
     };
 }
-use std::ops::{Range, RangeFrom, RangeTo};
 pub use std::str::FromStr;
+use std::{
+    num::ParseIntError,
+    ops::{Range, RangeFrom, RangeTo},
+};
 
 pub use arrayvec::ArrayVec;
 use complete::*;
@@ -119,15 +120,33 @@ where
     move |i| map(opt(&fun), |option| option.is_some())(i)
 }
 
-pub fn unsigned_number<I: StringLikeInput, E: ParseError<I>, T: FromStr>(i: I) -> IResult<I, T, E> {
+pub fn unsigned_number<
+    I: StringLikeInput,
+    E: ParseError<I> + FromExternalError<I, I::ParseError>,
+    T: FromStr,
+>(
+    i: I,
+) -> IResult<I, T, E> {
     map_res(digit1, I::parse)(i)
 }
 
-pub fn space0_number<'a, E: ParseError<&'a str>, T: FromStr>(i: &'a str) -> IResult<&'a str, T, E> {
+pub fn space0_number<
+    'a,
+    E: ParseError<&'a str> + FromExternalError<&'a str, T::Err>,
+    T: FromStr,
+>(
+    i: &'a str,
+) -> IResult<&'a str, T, E> {
     preceded(space0, map_res(idigit1, T::from_str))(i)
 }
 
-pub fn space1_number<'a, E: ParseError<&'a str>, T: FromStr>(i: &'a str) -> IResult<&'a str, T, E> {
+pub fn space1_number<
+    'a,
+    E: ParseError<&'a str> + FromExternalError<&'a str, T::Err>,
+    T: FromStr,
+>(
+    i: &'a str,
+) -> IResult<&'a str, T, E> {
     preceded(space1, map_res(idigit1, T::from_str))(i)
 }
 
@@ -147,10 +166,10 @@ pub fn optional_str<'a, E: ParseError<&'a str>>(
 }
 
 pub fn opt_flatten<'a, E: ParseError<&'a str>, O, F>(
-    f: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, Option<O>, E>
+    mut f: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Option<O>, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, Option<Option<O>>, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, Option<Option<O>>, E>,
 {
     move |i| {
         let (i, res) = f(i)?;
@@ -198,7 +217,11 @@ pub fn int_bool<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, bool
     alt((value(false, char('0')), value(true, char('1'))))(i)
 }
 
-pub fn fixed_list_of_numbers<'a, E: ParseError<&'a str>, T: FromStr>(
+pub fn fixed_list_of_numbers<
+    'a,
+    E: ParseError<&'a str> + FromExternalError<&'a str, T::Err>,
+    T: FromStr,
+>(
     len: usize,
 ) -> impl Fn(&'a str) -> IResult<&'a str, Vec<T>, E> {
     move |i| count(space0_number, len)(i)
@@ -231,21 +254,21 @@ where
 }
 
 pub fn curly_delimited<T: StringLikeInput, E: ParseError<T>, O, F>(
-    parser: F,
-) -> impl Fn(T) -> IResult<T, O, E>
+    mut parser: F,
+) -> impl FnMut(T) -> IResult<T, O, E>
 where
-    F: Fn(T) -> IResult<T, O, E>,
+    F: FnMut(T) -> IResult<T, O, E>,
 {
-    move |i| delimited(char('{'), &parser, char('}'))(i)
+    move |i| delimited(char('{'), &mut parser, char('}'))(i)
 }
 
 pub fn space0_delimited<'a, E: ParseError<&'a str>, O, F>(
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E>
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
 {
-    move |i| delimited(space0, &parser, space0)(i)
+    move |i| delimited(space0, &mut parser, space0)(i)
 }
 
 pub fn not_closing_curly<I: StringLikeInput, E: ParseError<I>>(i: I) -> IResult<I, I, E> {
@@ -254,10 +277,10 @@ pub fn not_closing_curly<I: StringLikeInput, E: ParseError<I>>(i: I) -> IResult<
 
 pub fn apply<T: StringLikeInput, E: ParseError<T>, O, F>(
     i: &mut T,
-    parser: F,
+    mut parser: F,
 ) -> Result<O, nom::Err<E>>
 where
-    F: Fn(T) -> IResult<T, O, E>,
+    F: FnMut(T) -> IResult<T, O, E>,
 {
     let (left, res) = parser(*i)?;
     *i = left;
@@ -269,7 +292,7 @@ pub fn cut_apply<T: StringLikeInput, E: ParseError<T>, O, F>(
     parser: F,
 ) -> Result<O, nom::Err<E>>
 where
-    F: Fn(T) -> IResult<T, O, E>,
+    F: FnMut(T) -> IResult<T, O, E>,
 {
     let (left, res) = cut(parser)(*i)?;
     *i = left;
@@ -278,25 +301,25 @@ where
 
 pub fn kv<'a, E: ParseError<&'a str>, O, F>(
     key: &'a str,
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E>
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
 {
-    move |i| preceded(tag(key), delimited(space1, &parser, end_of_line))(i)
+    move |i| preceded(tag(key), delimited(space1, &mut parser, end_of_line))(i)
 }
 pub fn kv_sep<'a, E: ParseError<&'a str>, O, F>(
     key: &'a str,
     sep: &'a str,
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E>
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
 {
     move |i| {
         preceded(
             tag(key),
-            delimited(tuple((space0, tag(sep), space0)), &parser, end_of_line),
+            delimited(tuple((space0, tag(sep), space0)), &mut parser, end_of_line),
         )(i)
     }
 }
@@ -304,33 +327,33 @@ where
 pub fn kv_eq<'a, E: ParseError<&'a str>, O, F>(
     key: &'a str,
     parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E>
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
 {
     kv_sep(key, "=", parser)
 }
 
 pub fn kv_ext<'a, E: ParseError<&'a str>, O, O2, F, K>(
-    key: K,
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E>
+    mut key: K,
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
-    K: Fn(&'a str) -> IResult<&'a str, O2, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
+    K: FnMut(&'a str) -> IResult<&'a str, O2, E>,
 {
-    move |i| preceded(&key, delimited(space1, &parser, end_of_line))(i)
+    move |i| preceded(&mut key, delimited(space1, &mut parser, end_of_line))(i)
 }
 
 pub fn kv_kv<'a, E: ParseError<&'a str>, O, O2, F, K>(
-    key: K,
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, (O2, O), E>
+    mut key: K,
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, (O2, O), E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
-    K: Fn(&'a str) -> IResult<&'a str, O2, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
+    K: FnMut(&'a str) -> IResult<&'a str, O2, E>,
 {
-    move |i| tuple((&key, delimited(space1, &parser, end_of_line)))(i)
+    move |i| tuple((&mut key, delimited(space1, &mut parser, end_of_line)))(i)
 }
 
 pub fn kv_kv_sep<'a, E: ParseError<&'a str>, O, O2, F, K>(
@@ -350,54 +373,80 @@ where
     }
 }
 
-pub fn key_int<'a, E: ParseError<&'a str>, O: FromStr>(
+pub fn key_int<'a, E: ParseError<&'a str> + FromExternalError<&'a str, O::Err>, O: FromStr>(
     key: &'a str,
-) -> impl Fn(&'a str) -> IResult<&'a str, O, E> {
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E> {
     kv(key, integer)
 }
 
 pub fn opt_kv<'a, E: ParseError<&'a str>, O, F>(
     key: &'a str,
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, Option<O>, E>
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Option<O>, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
 {
-    move |i| opt(preceded(tag(key), delimited(space1, &parser, end_of_line)))(i)
+    move |i| {
+        opt(preceded(
+            tag(key),
+            delimited(space1, &mut parser, end_of_line),
+        ))(i)
+    }
 }
 
 pub fn opt_kv_ext<'a, E: ParseError<&'a str>, O, O2, F, K>(
-    key: K,
-    parser: F,
-) -> impl Fn(&'a str) -> IResult<&'a str, Option<O>, E>
+    mut key: K,
+    mut parser: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Option<O>, E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O, E>,
-    K: Fn(&'a str) -> IResult<&'a str, O2, E>,
+    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
+    K: FnMut(&'a str) -> IResult<&'a str, O2, E>,
 {
-    move |i| opt(preceded(&key, delimited(space1, &parser, end_of_line)))(i)
+    move |i| {
+        opt(preceded(
+            &mut key,
+            delimited(space1, &mut parser, end_of_line),
+        ))(i)
+    }
 }
 
-pub fn opt_key_int<'a, E: ParseError<&'a str>, O: FromStr>(
+pub fn opt_key_int<'a, E: ParseError<&'a str> + FromExternalError<&'a str, O::Err>, O: FromStr>(
     key: &'a str,
-) -> impl Fn(&'a str) -> IResult<&'a str, Option<O>, E> {
+) -> impl FnMut(&'a str) -> IResult<&'a str, Option<O>, E> {
     opt_kv(key, integer)
 }
 
-pub fn integer<'a, E: ParseError<&'a str>, T: FromStr>(i: &'a str) -> IResult<&'a str, T, E> {
+pub fn opt_map<I: Clone, O1, O2, E: ParseError<I>, F, G>(
+    mut parser: F,
+    mut f: G,
+) -> impl FnMut(I) -> IResult<I, Option<O2>, E>
+where
+    F: Parser<I, Option<O1>, E>,
+    G: FnMut(O1) -> O2,
+{
+    move |input: I| {
+        let (input, o) = parser.parse(input)?;
+        Ok((input, o.map(&mut f)))
+    }
+}
+
+pub fn integer<'a, E: ParseError<&'a str> + FromExternalError<&'a str, T::Err>, T: FromStr>(
+    i: &'a str,
+) -> IResult<&'a str, T, E> {
     map_res(idigit1, FromStr::from_str)(i)
 }
 
-pub fn many_array<I, O, E, F, A: arrayvec::Array<Item = O>>(
+pub fn many_array<I, O, E, F, const CAP: usize>(
     m: usize,
     f: F,
-) -> impl Fn(I) -> IResult<I, ArrayVec<A>, E>
+) -> impl Fn(I) -> IResult<I, ArrayVec<O, CAP>, E>
 where
     I: Clone + PartialEq,
     F: Fn(I) -> IResult<I, O, E>,
     E: ParseError<I>,
 {
     move |i: I| {
-        if A::CAPACITY == 0 {
+        if CAP == 0 {
             return Ok((i, ArrayVec::new()));
         }
 
@@ -421,7 +470,7 @@ where
                     input = i;
                     count += 1;
 
-                    if count == A::CAPACITY {
+                    if count == CAP {
                         return Ok((input, res));
                     }
                 }
@@ -440,9 +489,9 @@ where
     }
 }
 
-pub fn count_array<I, O, E, F, A: arrayvec::Array<Item = O>>(
+pub fn count_array<I, O, E, F, const CAP: usize>(
     f: F,
-) -> impl Fn(I) -> IResult<I, ArrayVec<A>, E>
+) -> impl Fn(I) -> IResult<I, ArrayVec<O, CAP>, E>
 where
     I: Clone + PartialEq,
     F: Fn(I) -> IResult<I, O, E>,
@@ -450,9 +499,9 @@ where
 {
     move |i: I| {
         let mut input = i.clone();
-        let mut res = ArrayVec::<A>::new();
+        let mut res = ArrayVec::<O, CAP>::new();
 
-        for _ in 0..A::CAPACITY {
+        for _ in 0..CAP {
             let input_ = input.clone();
             match f(input_) {
                 Ok((i, o)) => {
@@ -532,7 +581,10 @@ where
     }
 }
 
-pub fn many_key_index_int<'a, E: ParseError<&'a str>>(
+pub fn many_key_index_int<
+    'a,
+    E: ParseError<&'a str> + FromExternalError<&'a str, ParseIntError>,
+>(
     prefix: &'a str,
     count: usize,
 ) -> impl Fn(&'a str) -> IResult<&'a str, Vec<Option<i32>>, E> {
@@ -610,7 +662,7 @@ pub fn nom_err_to_string_bytes<'a, O>(
         let string_err = map_err(&err, |slice| String::from_utf8_lossy(slice));
         let ref_err = map_err(&string_err, |cow| cow.as_ref());
         let text = String::from_utf8_lossy(bytes);
-        nom::error::convert_error(&text, ref_err)
+        nom::error::convert_error(text.as_ref(), ref_err)
     };
     match res {
         Ok(ok) => Ok(ok),
@@ -630,10 +682,11 @@ macro_rules! parse_struct(
     ($input:ident, $($name:ident)::* {
        $($field:ident: $val:expr,)*
     }$(, {$($field2:ident: $val2:expr,)*})?) => {{
-        let (inner_input, ($($field,)*)) = tuple((
-            $($val,)*
-        ))($input)?;
-        (inner_input, $($name)::* {
+        let __inner_input = $input;
+        $(
+            let (__inner_input, $field) = ($val)(__inner_input)?;
+        )*
+        (__inner_input, $($name)::* {
             $($field,)*
             $($($field2: $val2,)*)?
         })
@@ -716,6 +769,28 @@ where
                 input,
                 ErrorKind::NoneOf,
             )))
+        }
+    }
+}
+
+pub fn map_res_cut<I: Clone, O1, O2, E: FromExternalError<I, E2>, E2, F, G>(
+    mut parser: F,
+    mut f: G,
+) -> impl FnMut(I) -> IResult<I, O2, E>
+where
+    F: Parser<I, O1, E>,
+    G: FnMut(O1) -> Result<O2, E2>,
+{
+    move |input: I| {
+        let i = input.clone();
+        let (input, o1) = parser.parse(input)?;
+        match f(o1) {
+            Ok(o2) => Ok((input, o2)),
+            Err(e) => Err(nom::Err::Failure(E::from_external_error(
+                i,
+                ErrorKind::MapRes,
+                e,
+            ))),
         }
     }
 }
