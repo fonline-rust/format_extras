@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt, path::Path};
 
 use anyhow::Context;
-use itertools::Itertools;
+use quote::quote;
 
 pub struct AllDefines(Vec<(String, Value)>);
 
@@ -26,12 +26,12 @@ impl AllDefines {
         }
         Ok(AllDefines(defines))
     }
-    pub fn distil_enum<I: EnumIndex, E: DistilEnum<I>>(&self, prefix: &str, distil: E) -> StolenEnum<'_, I> {
+    pub fn distil_enum<I: EnumIndex, E: DistilEnum<I>>(&self, prefix: &str, distil: E, default_option: EnumOptions) -> StolenEnum<'_, I> {
         let mut map = BTreeMap::default();
         let iter = distil.transform(prefix, self.0.iter().map(|(define, value)| (define.as_str(), *value)));
         for (define, value) in iter {
             if let Some(index) = distil.to_index(define, value, map.keys().next_back().copied()) {
-                if let Some(old) = map.insert(index, define) {
+                if let Some((old, _)) = map.insert(index, (define, default_option)) {
                     log::warn!("#{index}: {old:?} is replaced with {define:?}");
                 }
             } else {
@@ -51,11 +51,16 @@ pub trait DistilEnum<I> {
     fn to_index(&self, define: &str, value: Value, last: Option<I>) -> Option<I>;
 }
 
-pub struct DistilDecEnum;
+#[derive(Default)]
+pub struct DistilDecEnum{
+    //until: Option<String>,
+}
 
 impl<I: EnumIndex> DistilEnum<I> for DistilDecEnum {
     fn transform<'a, 's>(&'a self, prefix: &'a str, iter: impl 'a + Iterator<Item = (&'s str, Value)>) -> impl 'a + Iterator<Item = (&'s str, Value)> {
-        iter.filter_map(move |(define, value)| define.strip_prefix(prefix).map(|define| (define, value)))
+        iter
+            //.take_while(|(define, _)| Some(*define) != self.until.as_deref())
+            .filter_map(move |(define, value)| define.strip_prefix(prefix).map(|define| (define, value)))
     }
     fn to_index(&self, define: &str, value: Value, last: Option<I>) -> Option<I> {
         let Value::Dec(dec) = value else {
@@ -88,8 +93,14 @@ macro_rules! impl_enum_index {
 }
 impl_enum_index!(usize u64 u32 u16 u8 isize i64 i32 i16 i8);
 
+#[derive(Clone, Copy)]
+pub struct EnumOptions {
+    pub variant: bool,
+    pub constant: bool,
+}
+
 pub struct StolenEnum<'a, I> {
-    map: BTreeMap<I, &'a str>,
+    map: BTreeMap<I, (&'a str, EnumOptions)>,
     prefix: String,
 }
 
@@ -103,9 +114,9 @@ impl<I: EnumIndex> StolenEnum<'_, I> {
     }
     pub fn split(&mut self, prefix: &str) -> Self {
         let mut map = BTreeMap::default();
-        self.map.retain(|index, define| {
+        self.map.retain(|index, (define, options)| {
             if let Some(define) = define.strip_prefix(prefix) {
-                map.insert(*index, define);
+                map.insert(*index, (define, *options));
                 false
             } else {
                 true
@@ -116,6 +127,38 @@ impl<I: EnumIndex> StolenEnum<'_, I> {
             prefix: format!("{}{prefix}", self.prefix),
         }
     }
+    pub fn last(&mut self) -> Option<(I, &'_ str, &mut EnumOptions)> {
+        let (value, (define, options)) = self.map.iter_mut().last()?;
+        Some((*value, *define, options))
+    }
+    pub fn count(&self) -> usize {
+        self.map.len()
+    }
+    /*
+    pub fn set_option(&mut self, full_define: &str, set_options: EnumOptions) -> anyhow::Result<()> {
+        if let Some(needle) = full_define.strip_prefix(&self.prefix) {
+            let (_, options) = self.map.values_mut().find(|(define, _)| *define == needle).context("can't find define")?;
+            *options = set_options;
+            Ok(())
+        } else {
+            anyhow::bail!("can't strip prefix {} from {}", self.prefix, full_define);
+        }
+    }
+    pub fn set_last_option(&mut self, ensure_define: Option<&str>, set_options: EnumOptions) -> anyhow::Result<()> {
+        let (last_define, last_option) = self.map.values_mut().last().context("empty enum")?;
+        if let Some(ensure_define) = ensure_define {
+            if let Some(check) = ensure_define.strip_prefix(&self.prefix) {
+                if *last_define != check {
+                    anyhow::bail!("ensure failed: {} != {}", last_define, check);
+                }
+            } else {
+                anyhow::bail!("can't strip prefix {} from {}", self.prefix, ensure_define);
+            }
+        }
+        *last_option = set_options;
+        Ok(())
+    }
+    */
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -219,35 +262,50 @@ fn parse_line(line: &str) -> Result<(&str, Value), Error> {
 fn param_rs<'a, I: EnumIndex>(
     name: &str,
     prefix: &str,
-    iter: impl Iterator<Item = (I, &'a str)>,
+    iter: impl Iterator<Item = (I, (&'a str, EnumOptions))>,
 ) -> anyhow::Result<String> {
     use convert_case::{Case, Casing};
     let name = quote::format_ident!("{name}");
-    let (originals, keys, values): (Vec<_>, Vec<_>, Vec<_>) = iter
-        .map(|(v, k)| (
-            format!("{prefix}{k}"),
-            quote::format_ident!("{}", k.to_case(Case::Pascal)),
-            v
-        ))
-        .multiunzip();
-    let keys = &keys;
-    let values = &values;
+    let mut variant_to_value = vec![];
+    let mut value_to_variant = vec![];
+    let mut variant_as_str = vec![];
+    let mut constants = vec![];
+
     let index_repr = quote::format_ident!("{}", I::TYPE_NAME);
+    for (value, (define, options)) in iter {
+        let variant = options.variant.then(|| quote::format_ident!("{}", define.to_case(Case::Pascal)));
+        let constant = options.constant.then(|| quote::format_ident!("{prefix}{define}"));
+        if let Some(variant) = &variant {
+            variant_to_value.push(quote! { #variant = #value, });
+            value_to_variant.push(quote! { #value => Self::#variant, });
+            let original = format!("{prefix}{define}");
+            variant_as_str.push(quote! { Self::#variant => #original, });
+            if let Some(constant) = constant {
+                constants.push(quote! { pub const #constant: Self = Self::#variant; });
+            }
+        } else if let Some(constant) = constant {
+            constants.push(quote! { pub const #constant: #index_repr = #value; });
+        }        
+    }
+    
     let tokens = quote::quote!(
         #[allow(dead_code)]
         #[repr(#index_repr)]
-        #[derive(PartialOrd, Ord, PartialEq, Eq, Clone, Copy)]
+        #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy)]
         pub enum #name {
             #(
-                #keys = #values,
+                #variant_to_value
             )*
         }
         #[allow(dead_code)]
         impl #name {
+            #(
+                #constants
+            )*
             pub fn try_from_index(index: #index_repr) -> Option<Self> {
                 Some(match index {
                     #(
-                        #values => Self::#keys,
+                        #value_to_variant
                     )*
                     _ => return None,
                 })
@@ -255,7 +313,7 @@ fn param_rs<'a, I: EnumIndex>(
             pub fn as_str(&self) -> &'static str {
                 match self {
                     #(
-                        Self::#keys => #originals,
+                        #variant_as_str
                     )*
                 }
             }

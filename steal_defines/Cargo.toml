@@ -17,4 +17,4 @@ syn = { version = "2", default-features = false, features = [
 ] }
 prettyplease = "0.2"
 convert_case = "0.8"
-itertools = "0.14"
+#itertools = "0.14"
