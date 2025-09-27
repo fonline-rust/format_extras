@@ -15,7 +15,7 @@ pub mod complete {
     pub use nom::{
         bytes::complete::{tag, take_till, take_till1, take_while1},
         character::complete::{
-            alphanumeric1, char, digit1, line_ending, multispace0, not_line_ending, one_of, space0,
+            alphanumeric1, char, digit1, line_ending, multispace0, multispace1, not_line_ending, one_of, space0,
             space1,
         },
     };
@@ -818,5 +818,14 @@ mod tests {
         let parser = t_rn::<_, VerboseError<&str>>;
         assert_eq!(Ok(("", "\n")), parser("\n"));
         assert_eq!(Ok(("", "\r\n")), parser("\r\n"));
+    }
+
+    #[test]
+    fn test_end_of_line() {
+        assert!(end_of_line::<VerboseError<&str>>("").is_ok());
+
+        let res = opt_key_int::<VerboseError<&str>, u8>("Foo")("Foo 1");
+        dbg!(&res);
+        assert!(res.is_ok());
     }
 }
