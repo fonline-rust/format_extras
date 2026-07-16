@@ -1,8 +1,8 @@
 use scc::hash_index::Entry;
 
 use crate::{
-    path::{ChecksumResult, ConventionalPath, UnconventionalPathRef},
     PathChecksum,
+    path::{ChecksumResult, ConventionalPath, UnconventionalPathRef},
 };
 
 pub struct DictEntry {

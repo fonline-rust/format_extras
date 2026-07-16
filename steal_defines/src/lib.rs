@@ -18,6 +18,7 @@ impl AllDefines {
             .context("read file to steal defines from")?;
         Self::steal(&file)
     }
+
     pub fn steal(defines_text: &str) -> anyhow::Result<AllDefines> {
         let mut defines = vec![];
         for line in defines_text.lines() {
@@ -33,6 +34,7 @@ impl AllDefines {
         }
         Ok(AllDefines(defines))
     }
+
     pub fn distil_enum<I: EnumIndex, E: DistilEnum<I>>(
         &self,
         prefix: &str,
@@ -113,6 +115,7 @@ impl StolenConstants {
         self.constants.append(&mut other.constants);
         self
     }
+
     pub fn distil_from<T: ConstantValue>(
         mut self,
         defines: &AllDefines,
@@ -237,6 +240,7 @@ impl<I: EnumIndex> DistilEnum<I> for DistilDecEnum {
                 define.strip_prefix(prefix).map(|define| (define, value))
             })
     }
+
     fn to_index(&self, define: &str, value: Value, last: Option<I>) -> Option<I> {
         let value = match value {
             Value::Dec(value) if self.allow_dec => value,
@@ -366,6 +370,7 @@ impl<I: EnumIndex> StolenEnum<I> {
             prefix: format!("{}{prefix}", self.prefix),
         }
     }
+
     pub fn get_value_with_prefix(&self, define_to_find: &str) -> anyhow::Result<I> {
         let to_find = define_to_find.strip_prefix(&self.prefix).with_context(|| {
             format!(
@@ -380,10 +385,12 @@ impl<I: EnumIndex> StolenEnum<I> {
             .with_context(|| format!("can't find {define_to_find:?}"))?;
         Ok(*value)
     }
+
     pub fn get_next(&self, index: I) -> Option<(&str, I)> {
         let (value, (key, _)) = self.map.range(index..).next()?;
         Some((key.as_str(), *value))
     }
+
     pub fn get_mut_without_prefix(
         &mut self,
         define_to_find: &str,
@@ -394,13 +401,16 @@ impl<I: EnumIndex> StolenEnum<I> {
             .find(|(_, (define, _))| *define == define_to_find)?;
         Some((*value, define.as_str(), options))
     }
+
     pub fn last(&mut self) -> Option<(I, &'_ str, &mut EnumOptions)> {
         let (value, (define, options)) = self.map.iter_mut().last()?;
         Some((*value, define.as_str(), options))
     }
+
     pub fn count(&self) -> usize {
         self.map.len()
     }
+
     pub fn without<S: AsRef<str>>(
         mut self,
         defines: impl IntoIterator<Item = S>,
@@ -420,6 +430,7 @@ impl<I: EnumIndex> StolenEnum<I> {
         }
         Ok(self)
     }
+
     pub fn with<S: AsRef<str>>(
         mut self,
         defines: impl IntoIterator<Item = (S, I, EnumOptions)>,

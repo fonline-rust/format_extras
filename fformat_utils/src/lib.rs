@@ -1,9 +1,9 @@
 #[cfg(feature = "dict")]
 pub mod dict;
-mod path;
-mod slice;
 #[cfg(feature = "ini_to_toml")]
 pub mod ini_to_toml;
+mod path;
+mod slice;
 
 pub use self::{
     path::{ConventionalPath, PathChecksum},

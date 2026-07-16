@@ -1,22 +1,21 @@
 pub use nom::{
-    self,
+    self, IResult,
     branch::alt,
     combinator::{cond, cut, map, map_opt, map_parser, map_res, opt, peek, recognize, value},
     error::{ErrorKind, ParseError},
-    multi::{count, fold_many0, fold_many_m_n, many0, many_m_n, separated_list0, separated_list1},
+    multi::{count, fold_many_m_n, fold_many0, many_m_n, many0, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    IResult,
 };
 use nom::{
-    error::{FromExternalError, VerboseError},
     AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Parser, Slice,
+    error::{FromExternalError, VerboseError},
 };
 pub mod complete {
     pub use nom::{
         bytes::complete::{tag, take_till, take_till1, take_while1},
         character::complete::{
-            alphanumeric1, char, digit1, line_ending, multispace0, multispace1, not_line_ending, one_of, space0,
-            space1,
+            alphanumeric1, char, digit1, line_ending, multispace0, multispace1, not_line_ending,
+            one_of, space0, space1,
         },
     };
 }
