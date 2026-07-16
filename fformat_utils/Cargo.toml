@@ -7,8 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["dict", "serde"]
-dict = ["scc", "thiserror", "ahash" ]
+default = ["dict", "serde", "ini_to_toml"]
+dict = ["scc", "thiserror", "ahash"]
+ini_to_toml = ["itertools", "thiserror"]
 
 [dependencies]
 crc32fast = "1"
@@ -17,3 +18,5 @@ scc = { version = "3.8.6", optional = true, features = ["equivalent"]}
 ahash = { version = "0.8", optional = true }
 serde = { version = "1", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
+itertools = { version = "0.14", optional = true }
+smallvec = { version = "1", optional = true }
