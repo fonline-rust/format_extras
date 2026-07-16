@@ -44,7 +44,7 @@ impl fmt::Display for PathChecksum {
 }
 
 impl PathChecksum {
-    pub fn value(&self) -> u32 {
+    pub fn value(self) -> u32 {
         self.0
     }
 }

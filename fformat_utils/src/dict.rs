@@ -98,7 +98,7 @@ impl Dict {
             };
         }
 
-        match self.to_path.entry(checksum) {
+        match self.to_path.entry_sync(checksum) {
             Entry::Occupied(entry) => {
                 let stored = entry.get().clone();
                 drop(entry);
