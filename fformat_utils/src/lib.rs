@@ -7,7 +7,7 @@ mod path;
 mod slice;
 
 pub use self::{
-    dict::{Dict, DictEntry, DictError, Location},
+    dict::{Dict, DictEntry, DictError},
     path::{PathChecksum, conventional::ConventionalPath, url::LocatorPath},
     slice::trim_matches,
 };

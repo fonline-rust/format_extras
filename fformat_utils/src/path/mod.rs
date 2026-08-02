@@ -49,11 +49,12 @@ impl PathChecksum {
         self.0
     }
 }
-
+/*
 pub(crate) struct ChecksumResult {
     pub(crate) checksum: PathChecksum,
     pub(crate) utf8_len: usize,
 }
+*/
 
 #[cfg(test)]
 mod test {
@@ -71,7 +72,7 @@ mod test {
     #[test]
     fn verify_unconventional() {
         fn checksum(path: &str) -> u32 {
-            UnconventionalPathRef(path).checksum().checksum.0
+            UnconventionalPathRef::try_new(path).unwrap().checksum().0
         }
         use super::unconventional::UnconventionalPathRef;
         assert_eq!(crc32fast::hash(b"foo/bar"), checksum("foo/bar/"));

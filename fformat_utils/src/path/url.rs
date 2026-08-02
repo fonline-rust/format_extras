@@ -100,9 +100,29 @@ impl LocatorPath {
             ("", str)
         }
     }
+
+    fn as_path_ref(&self) -> LocatorPathRef<'_> {
+        LocatorPathRef(self.as_str())
+    }
+
+    pub fn is_folder(&self) -> bool {
+        self.as_str().ends_with('/')
+    }
+
+    pub fn is_file(&self) -> bool {
+        !self.is_folder()
+    }
+
+    // TODO: proper path len
+    // TODO: get it from dict?
+    /*
+    pub fn make_conventional(path: &str) -> Self {
+        UnconventionalPathRef(path).make_conventional(path.len())
+    }
+    */
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub(crate) struct LocatorPathRef<'a>(&'a str);
 
 impl<'a> LocatorPathRef<'a> {
@@ -111,8 +131,9 @@ impl<'a> LocatorPathRef<'a> {
     }
 
     pub(crate) fn split_last(&self) -> (LocatorPathRef<'a>, &'a str) {
-        let str = self.0.trim_end_matches("/");
-        if let Some((pos, _)) = str.char_indices().rev().find(|(_, ch)| *ch == '/') {
+        let str = self.0;
+        let trimmed = str.trim_end_matches("/");
+        if let Some((pos, _)) = trimmed.char_indices().rev().find(|(_, ch)| *ch == '/') {
             (LocatorPathRef(&str[..pos]), &str[pos + 1..])
         } else {
             (LocatorPathRef(""), str)
@@ -158,16 +179,6 @@ impl<'a> Comparable<LocatorPath> for &LocatorPathRef<'a> {
     }
 }
 
-impl LocatorPath {
-    fn as_path_ref(&self) -> LocatorPathRef {
-        LocatorPathRef(self.as_str())
-    }
-
-    pub fn make_conventional(path: &str) -> Self {
-        UnconventionalPathRef(path).make_conventional(path.len())
-    }
-}
-
 impl From<ConventionalPath> for LocatorPath {
     fn from(value: ConventionalPath) -> Self {
         ArcPath::new(value.into_inner())
@@ -180,11 +191,11 @@ impl From<&ConventionalPath> for LocatorPath {
 }
 
 impl ConventionalPath {
-    pub(crate) fn parents(&self) -> impl Iterator<Item = LocatorPathRef> {
+    pub(crate) fn parents(&self) -> impl Iterator<Item = LocatorPathRef<'_>> {
         let str = self.as_str();
         str.char_indices()
             .rev()
             .filter(|(_, ch)| *ch == '/')
-            .map(|(end, ..)| LocatorPathRef(&str[..end]))
+            .map(|(end, ..)| LocatorPathRef(&str[..=end]))
     }
 }
