@@ -1,9 +1,7 @@
-use std::{borrow::Borrow, cmp::Ordering, ops::Bound, sync::Arc};
+use std::cmp::Ordering;
 
 use scc::{Comparable, Equivalent};
-use serde::de::value;
 
-use super::unconventional::UnconventionalPathRef;
 use crate::{ConventionalPath, arc_path::ArcPath};
 
 pub struct Locator;
@@ -24,61 +22,6 @@ impl PartialOrd for LocatorPath {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct FindByParent<'a> {
-    parent: &'a str,
-    first: bool,
-}
-
-impl<'a> FindByParent<'a> {
-    pub(crate) fn from_path(path: &'a str) -> Option<(Bound<Self>, Bound<Self>)> {
-        let path = path.trim().trim_end_matches('/');
-        if path.is_empty()
-            || path.starts_with('/')
-            || path.contains("//")
-            || path.chars().any(|ch| ch.is_uppercase() || ch == '\\')
-        {
-            None
-        } else {
-            Some((
-                Bound::Included(Self {
-                    parent: path,
-                    first: true,
-                }),
-                Bound::Excluded(Self {
-                    parent: path,
-                    first: false,
-                }),
-            ))
-        }
-    }
-}
-
-impl<'a> Equivalent<LocatorPath> for FindByParent<'a> {
-    fn equivalent(&self, key: &LocatorPath) -> bool {
-        let (parent, _) = key.split_parent();
-        if self.first {
-            self.parent.eq(parent)
-        } else {
-            self.parent.ne(parent)
-        }
-    }
-}
-
-impl<'a> Comparable<LocatorPath> for FindByParent<'a> {
-    fn compare(&self, key: &LocatorPath) -> std::cmp::Ordering {
-        let (parent, _) = key.split_parent();
-        if self.first {
-            self.parent.cmp(parent)
-        } else {
-            match self.parent.cmp(parent) {
-                Ordering::Less | Ordering::Equal => Ordering::Less,
-                Ordering::Greater => Ordering::Greater,
-            }
-        }
-    }
-}
-
 impl Equivalent<LocatorPath> for &ConventionalPath {
     fn equivalent(&self, key: &LocatorPath) -> bool {
         LocatorPathRef(self.as_str()).eq(&key.as_path_ref())
@@ -92,15 +35,6 @@ impl Comparable<LocatorPath> for &ConventionalPath {
 }
 
 impl LocatorPath {
-    fn split_parent(&self) -> (&str, &str) {
-        let str = self.as_str().trim_end_matches("/");
-        if let Some((pos, _)) = str.char_indices().rev().find(|(_, ch)| *ch == '/') {
-            (&str[..=pos], &str[pos + 1..])
-        } else {
-            ("", str)
-        }
-    }
-
     fn as_path_ref(&self) -> LocatorPathRef<'_> {
         LocatorPathRef(self.as_str())
     }
@@ -199,3 +133,72 @@ impl ConventionalPath {
             .map(|(end, ..)| LocatorPathRef(&str[..=end]))
     }
 }
+
+// TODO: reimplement, make sure to keep trailing slashes for folders
+/*
+impl LocatorPath {
+    fn split_parent(&self) -> (&str, &str) {
+        let str = self.as_str().trim_end_matches("/");
+        if let Some((pos, _)) = str.char_indices().rev().find(|(_, ch)| *ch == '/') {
+            (&str[..=pos], &str[pos + 1..])
+        } else {
+            ("", str)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FindByParent<'a> {
+    parent: &'a str,
+    first: bool,
+}
+
+impl<'a> FindByParent<'a> {
+    pub(crate) fn from_path(path: &'a str) -> Option<(Bound<Self>, Bound<Self>)> {
+        let path = path.trim().trim_end_matches('/');
+        if path.is_empty()
+            || path.starts_with('/')
+            || path.contains("//")
+            || path.chars().any(|ch| ch.is_uppercase() || ch == '\\')
+        {
+            None
+        } else {
+            Some((
+                Bound::Included(Self {
+                    parent: path,
+                    first: true,
+                }),
+                Bound::Excluded(Self {
+                    parent: path,
+                    first: false,
+                }),
+            ))
+        }
+    }
+}
+
+impl<'a> Equivalent<LocatorPath> for FindByParent<'a> {
+    fn equivalent(&self, key: &LocatorPath) -> bool {
+        let (parent, _) = key.split_parent();
+        if self.first {
+            self.parent.eq(parent)
+        } else {
+            self.parent.ne(parent)
+        }
+    }
+}
+
+impl<'a> Comparable<LocatorPath> for FindByParent<'a> {
+    fn compare(&self, key: &LocatorPath) -> std::cmp::Ordering {
+        let (parent, _) = key.split_parent();
+        if self.first {
+            self.parent.cmp(parent)
+        } else {
+            match self.parent.cmp(parent) {
+                Ordering::Less | Ordering::Equal => Ordering::Less,
+                Ordering::Greater => Ordering::Greater,
+            }
+        }
+    }
+}
+*/

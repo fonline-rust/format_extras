@@ -1,5 +1,3 @@
-use std::path;
-
 use super::PathChecksum;
 use crate::arc_path::ArcPath;
 

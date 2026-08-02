@@ -49,12 +49,6 @@ impl PathChecksum {
         self.0
     }
 }
-/*
-pub(crate) struct ChecksumResult {
-    pub(crate) checksum: PathChecksum,
-    pub(crate) utf8_len: usize,
-}
-*/
 
 #[cfg(test)]
 mod test {
