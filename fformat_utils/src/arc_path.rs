@@ -40,6 +40,7 @@ impl<META> ArcPath<META> {
     pub(crate) fn into_inner(self) -> Arc<str> {
         self.0
     }
+
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }

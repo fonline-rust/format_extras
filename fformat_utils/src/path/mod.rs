@@ -1,8 +1,8 @@
 use std::fmt;
 
 pub(crate) mod conventional;
-pub(crate) mod url;
 pub(crate) mod unconventional;
+pub(crate) mod url;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "bytemuck", derive(bytemuck::Pod, bytemuck::Zeroable))]
@@ -49,7 +49,6 @@ impl PathChecksum {
         self.0
     }
 }
-
 
 pub(crate) struct ChecksumResult {
     pub(crate) checksum: PathChecksum,

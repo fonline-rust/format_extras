@@ -9,8 +9,16 @@ pub struct Error<'a> {
 }
 impl<'a> Error<'a> {
     pub fn into_owned(self) -> Error<'static> {
-        let Self { kind, line_num, line } = self;
-        Error { kind, line_num, line: Cow::Owned(line.into_owned()) }
+        let Self {
+            kind,
+            line_num,
+            line,
+        } = self;
+        Error {
+            kind,
+            line_num,
+            line: Cow::Owned(line.into_owned()),
+        }
     }
 }
 
@@ -28,7 +36,11 @@ pub fn translate<'a>(ini: &'a str, with_comments: bool) -> Result<String, Error<
         line = line.trim_start_matches('\u{feff}').trim();
         let (line, comment) = split_until(line, '#');
         let line = line.trim_end();
-        let err = |kind| Error{kind, line: Cow::Borrowed(line), line_num};
+        let err = |kind| Error {
+            kind,
+            line: Cow::Borrowed(line),
+            line_num,
+        };
 
         if line.starts_with('[') {
             if !line.ends_with(']') || line.len() < 3 {
@@ -39,13 +51,15 @@ pub fn translate<'a>(ini: &'a str, with_comments: bool) -> Result<String, Error<
                 return Err(err(ErrorKind::MalformedSection));
             }
             if section.contains(' ') {
-                let sections = section.split(' ').map(|sec| if sec.parse::<u16>().is_ok() {
-                    ["", sec, ""]
-                } else {
-                    ["\"", sec, "\""]
+                let sections = section.split(' ').map(|sec| {
+                    if sec.parse::<u16>().is_ok() {
+                        ["", sec, ""]
+                    } else {
+                        ["\"", sec, "\""]
+                    }
                 });
                 toml.push_str("[");
-                toml.extend(itertools::intersperse( sections, [".", "", ""]).flatten());
+                toml.extend(itertools::intersperse(sections, [".", "", ""]).flatten());
                 toml.push_str("]")
             } else {
                 toml.push_str("[[\"");
@@ -63,7 +77,7 @@ pub fn translate<'a>(ini: &'a str, with_comments: bool) -> Result<String, Error<
                     }
                 }
 
-                toml.extend(itertools::intersperse( key.split('.'), "_"));
+                toml.extend(itertools::intersperse(key.split('.'), "_"));
                 if let Some(key) = second_key {
                     toml.push('.');
                     toml.push_str(key);
@@ -81,7 +95,7 @@ pub fn translate<'a>(ini: &'a str, with_comments: bool) -> Result<String, Error<
                     toml.push_str(val);
                 } else {
                     toml.push('"');
-                    toml.extend(itertools::intersperse( val.split('\\'), "\\\\"));
+                    toml.extend(itertools::intersperse(val.split('\\'), "\\\\"));
                     toml.push('"');
                 }
             } else {

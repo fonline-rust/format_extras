@@ -3,9 +3,8 @@ use std::{borrow::Borrow, cmp::Ordering, ops::Bound, sync::Arc};
 use scc::{Comparable, Equivalent};
 use serde::de::value;
 
-use crate::{arc_path::ArcPath, ConventionalPath};
-
 use super::unconventional::UnconventionalPathRef;
+use crate::{ConventionalPath, arc_path::ArcPath};
 
 pub struct Locator;
 
@@ -34,10 +33,23 @@ pub(crate) struct FindByParent<'a> {
 impl<'a> FindByParent<'a> {
     pub(crate) fn from_path(path: &'a str) -> Option<(Bound<Self>, Bound<Self>)> {
         let path = path.trim().trim_end_matches('/');
-        if path.is_empty() || path.starts_with('/') || path.contains("//") || path.chars().any(|ch| ch.is_uppercase() || ch == '\\') {
+        if path.is_empty()
+            || path.starts_with('/')
+            || path.contains("//")
+            || path.chars().any(|ch| ch.is_uppercase() || ch == '\\')
+        {
             None
         } else {
-            Some((Bound::Included( Self{parent: path, first: true}), Bound::Excluded(Self{parent: path, first: false})))
+            Some((
+                Bound::Included(Self {
+                    parent: path,
+                    first: true,
+                }),
+                Bound::Excluded(Self {
+                    parent: path,
+                    first: false,
+                }),
+            ))
         }
     }
 }
@@ -67,7 +79,6 @@ impl<'a> Comparable<LocatorPath> for FindByParent<'a> {
     }
 }
 
-
 impl Equivalent<LocatorPath> for &ConventionalPath {
     fn equivalent(&self, key: &LocatorPath) -> bool {
         LocatorPathRef(self.as_str()).eq(&key.as_path_ref())
@@ -80,12 +91,11 @@ impl Comparable<LocatorPath> for &ConventionalPath {
     }
 }
 
-
 impl LocatorPath {
     fn split_parent(&self) -> (&str, &str) {
         let str = self.as_str().trim_end_matches("/");
         if let Some((pos, _)) = str.char_indices().rev().find(|(_, ch)| *ch == '/') {
-            (&str[..=pos], &str[pos+1..])
+            (&str[..=pos], &str[pos + 1..])
         } else {
             ("", str)
         }
@@ -96,13 +106,14 @@ impl LocatorPath {
 pub(crate) struct LocatorPathRef<'a>(&'a str);
 
 impl<'a> LocatorPathRef<'a> {
-    fn parts(&self) -> impl Iterator<Item=&str> {
+    fn parts(&self) -> impl Iterator<Item = &str> {
         self.0.split_inclusive('/')
     }
+
     pub(crate) fn split_last(&self) -> (LocatorPathRef<'a>, &'a str) {
         let str = self.0.trim_end_matches("/");
         if let Some((pos, _)) = str.char_indices().rev().find(|(_, ch)| *ch == '/') {
-            (LocatorPathRef(&str[..pos]), &str[pos+1..])
+            (LocatorPathRef(&str[..pos]), &str[pos + 1..])
         } else {
             (LocatorPathRef(""), str)
         }
@@ -151,6 +162,7 @@ impl LocatorPath {
     fn as_path_ref(&self) -> LocatorPathRef {
         LocatorPathRef(self.as_str())
     }
+
     pub fn make_conventional(path: &str) -> Self {
         UnconventionalPathRef(path).make_conventional(path.len())
     }
@@ -168,8 +180,11 @@ impl From<&ConventionalPath> for LocatorPath {
 }
 
 impl ConventionalPath {
-    pub(crate) fn parents(&self) -> impl Iterator<Item=LocatorPathRef> {
+    pub(crate) fn parents(&self) -> impl Iterator<Item = LocatorPathRef> {
         let str = self.as_str();
-        str.char_indices().rev().filter(|(_, ch)| *ch == '/').map(|(end, ..)| LocatorPathRef(&str[..end]))
+        str.char_indices()
+            .rev()
+            .filter(|(_, ch)| *ch == '/')
+            .map(|(end, ..)| LocatorPathRef(&str[..end]))
     }
 }

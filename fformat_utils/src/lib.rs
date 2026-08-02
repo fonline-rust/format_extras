@@ -1,10 +1,10 @@
+mod arc_path;
 #[cfg(feature = "dict")]
 pub mod dict;
-mod path;
-mod slice;
-mod arc_path;
 #[cfg(feature = "ini_to_toml")]
 pub mod ini_to_toml;
+mod path;
+mod slice;
 
 pub use self::{
     dict::{Dict, DictEntry, DictError, Location},

@@ -1,10 +1,14 @@
 use core::error;
 use std::{borrow::Borrow, ops::Bound};
 
-use scc::{hash_index::Entry, Comparable};
+use scc::{Comparable, hash_index::Entry};
 
 use crate::{
-    path::{conventional::ConventionalPath, unconventional::UnconventionalPathRef, url::FindByParent, ChecksumResult}, LocatorPath, PathChecksum
+    LocatorPath, PathChecksum,
+    path::{
+        ChecksumResult, conventional::ConventionalPath, unconventional::UnconventionalPathRef,
+        url::FindByParent,
+    },
 };
 
 pub struct DictEntry {
@@ -85,7 +89,7 @@ pub enum DictError {
         locator_path: LocatorPath,
         file: ConventionalPath,
         reason: IndexResult,
-    }
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -102,11 +106,21 @@ pub enum IndexResult {
     CantInsert,
 }
 impl IndexResult {
-    fn already_indexed(self, checksum: PathChecksum, locator_path: impl Into<LocatorPath>, file: &ConventionalPath) -> Result<bool, DictError> {
+    fn already_indexed(
+        self,
+        checksum: PathChecksum,
+        locator_path: impl Into<LocatorPath>,
+        file: &ConventionalPath,
+    ) -> Result<bool, DictError> {
         match self {
             Self::Indexed => Ok(false),
             Self::FolderAlredyIndexed => Ok(true),
-            _ => Err(DictError::Location { checksum, locator_path: locator_path.into(), file: file.clone(), reason: self })
+            _ => Err(DictError::Location {
+                checksum,
+                locator_path: locator_path.into(),
+                file: file.clone(),
+                reason: self,
+            }),
         }
     }
 }
@@ -114,7 +128,9 @@ impl IndexResult {
 impl DictError {
     pub fn checksum(&self) -> PathChecksum {
         match *self {
-            DictError::Collision { checksum, .. } | DictError::Location { checksum, .. } => checksum,
+            DictError::Collision { checksum, .. } | DictError::Location { checksum, .. } => {
+                checksum
+            }
         }
     }
 }
@@ -191,7 +207,7 @@ impl Dict {
         self.locations.peek_with(locator_path, |path, stored| (path, stored))
     }*/
 
-    fn peek_location(&self, locator_path: &impl Comparable<LocatorPath>) -> Option<Location>{
+    fn peek_location(&self, locator_path: &impl Comparable<LocatorPath>) -> Option<Location> {
         self.locations.peek_with(locator_path, |_, stored| *stored)
     }
 
@@ -204,7 +220,7 @@ impl Dict {
 
         }
         if locator_path.is_folder() {
-            
+
             Some(self.locations.range::<LocatorPathRef, _>((Bound::Excluded(locator_path), Bound::Unbounded), guard)
                 .map(|(k, _)| k.borrow())
                 //.take_while(|path| path.p)
@@ -215,13 +231,18 @@ impl Dict {
     }
      */
 
-    fn remember_one<P: Comparable<LocatorPath> + Into<LocatorPath>>(&self, locator_path: P, location: Location, tries: u8) -> IndexResult {
+    fn remember_one<P: Comparable<LocatorPath> + Into<LocatorPath>>(
+        &self,
+        locator_path: P,
+        location: Location,
+        tries: u8,
+    ) -> IndexResult {
         if let Some(stored) = self.peek_location(&locator_path) {
             return match (stored.is_folder, location.is_folder) {
                 (true, true) => IndexResult::FolderAlredyIndexed,
                 (false, false) => IndexResult::FileAlreadyIndexed,
                 _ => IndexResult::FolderFileConflict,
-            }
+            };
         }
         match self.locations.insert_sync(locator_path.into(), location) {
             Ok(()) => IndexResult::Indexed,
@@ -235,11 +256,19 @@ impl Dict {
         }
     }
 
-    fn remember_file(&self, file: &ConventionalPath, checksum: PathChecksum) -> Result<(), DictError>{
-        self.remember_one(file, Location { is_folder: false }, 2).already_indexed(checksum, file, file)?;
+    fn remember_file(
+        &self,
+        file: &ConventionalPath,
+        checksum: PathChecksum,
+    ) -> Result<(), DictError> {
+        self.remember_one(file, Location { is_folder: false }, 2)
+            .already_indexed(checksum, file, file)?;
         for parent in file.parents() {
-            if self.remember_one(&parent, Location { is_folder: true }, 2).already_indexed(checksum, parent, file)? {
-                return Ok(())
+            if self
+                .remember_one(&parent, Location { is_folder: true }, 2)
+                .already_indexed(checksum, parent, file)?
+            {
+                return Ok(());
             }
         }
         Ok(())

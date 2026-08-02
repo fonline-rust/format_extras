@@ -1,6 +1,5 @@
+use super::{PathChecksum, unconventional::UnconventionalPathRef};
 use crate::arc_path::ArcPath;
-
-use super::{unconventional::UnconventionalPathRef, PathChecksum};
 
 pub struct Conventional;
 

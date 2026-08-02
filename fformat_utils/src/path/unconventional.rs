@@ -1,6 +1,5 @@
-use crate::arc_path::ArcPath;
-
 use super::{ChecksumResult, PathChecksum};
+use crate::arc_path::ArcPath;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct UnconventionalPathRef<'a>(pub &'a str);
