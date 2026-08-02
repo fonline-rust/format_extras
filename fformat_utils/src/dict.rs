@@ -7,8 +7,6 @@ use crate::{
     path::{conventional::ConventionalPath, unconventional::UnconventionalPathRef, url::FindByParent, ChecksumResult}, LocatorPath, PathChecksum
 };
 
-pub use scc::ebr::Guard;
-
 pub struct DictEntry {
     pub conventional_path: ConventionalPath,
     pub checksum: PathChecksum,
@@ -156,7 +154,7 @@ impl Dict {
             };
         }
 
-        match self.to_path.entry(checksum) {
+        match self.to_path.entry_sync(checksum) {
             Entry::Occupied(entry) => {
                 let stored = entry.get().clone();
                 drop(entry);
@@ -225,7 +223,7 @@ impl Dict {
                 _ => IndexResult::FolderFileConflict,
             }
         }
-        match self.locations.insert(locator_path.into(), location) {
+        match self.locations.insert_sync(locator_path.into(), location) {
             Ok(()) => IndexResult::Indexed,
             Err((locator_path, _)) => {
                 if tries == 0 {
